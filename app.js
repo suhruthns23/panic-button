@@ -1,7 +1,14 @@
 
+"use strict";
+
+// ==========================================
+// PANIC BUTTON — SINGLE + MULTIPLAYER
+// ==========================================
+
 const $ = (id) => document.getElementById(id);
 
 const screens = [
+  "modeScreen",
   "setupScreen",
   "passScreen",
   "gameScreen",
@@ -11,13 +18,6 @@ const screens = [
 
 const COLORS = ["RED", "BLUE", "YELLOW", "GREEN"];
 
-const COLOR_NAMES = {
-  RED: "Red",
-  BLUE: "Blue",
-  YELLOW: "Yellow",
-  GREEN: "Green"
-};
-
 const COLOR_EMOJI = {
   RED: "🔴",
   BLUE: "🔵",
@@ -25,564 +25,916 @@ const COLOR_EMOJI = {
   GREEN: "🟢"
 };
 
-const state = {
-  players: [],
-  currentIndex: 0,
-  roundForPlayer: 1,
-  roundsPerPlayer: 5,
-  turnDuration: 5,
-  timerInterval: null,
-  switchTimeout: null,
-  startedAt: 0,
-  deadline: 0,
-  challenge: null,
-  answered: false,
-  correctTotal: 0,
-  wrongTotal: 0,
-  streak: 0,
-  bestStreak: 0,
-  turnResult: null
-};
+const CHALLENGES = [
+  {
+    type: "match",
+    emoji: "🎯",
+    title: "MATCH THE COLOUR",
+    badge: "QUICK REACTION",
+    description: "Tap the colour shown on the screen!",
+    create() {
+      const target = randomColor();
+      return {
+        target,
+        description: `Tap ${target}!`,
+        answer: target
+      };
+    }
+  },
+  {
+    type: "avoid",
+    emoji: "🙅",
+    title: "AVOID THAT COLOUR",
+    badge: "DON'T GET TRICKED",
+    description: "Tap any colour except the target!",
+    create() {
+      const target = randomColor();
+      return {
+        target,
+        description: `Whatever you do, DON'T tap ${target}!`,
+        answer: null
+      };
+    }
+  },
+  {
+    type: "reverse",
+    emoji: "🔄",
+    title: "REVERSE RULE",
+    badge: "THINK FAST",
+    description: "Follow the colour cycle!",
+    create() {
+      const previous = randomColor();
+      const index = COLORS.indexOf(previous);
+      const answer = COLORS[(index + 1) % COLORS.length];
 
-function showScreen(id) {
-  screens.forEach((screenId) => {
-    $(screenId).classList.toggle("hidden", screenId !== id);
+      return {
+        target: previous,
+        description: `After ${previous} comes the NEXT colour. Tap it!`,
+        answer
+      };
+    }
+  },
+  {
+    type: "switch",
+    emoji: "🌀",
+    title: "COLOUR SWITCH!",
+    badge: "STAY ALERT",
+    description: "The target might change!",
+    create() {
+      const target = randomColor();
+      let nextTarget = randomColor();
+
+      while (nextTarget === target) {
+        nextTarget = randomColor();
+      }
+
+      return {
+        target,
+        nextTarget,
+        description: `Tap ${target}! Watch out — the target can switch!`,
+        answer: target
+      };
+    }
+  },
+  {
+    type: "freeze",
+    emoji: "🧊",
+    title: "FREEZE!",
+    badge: "HANDS OFF",
+    description: "Do not touch any button until time runs out!",
+    create() {
+      return {
+        target: null,
+        description: "DON'T TAP ANYTHING! Wait until the timer ends.",
+        answer: null
+      };
+    }
+  }
+];
+
+function randomColor() {
+  return COLORS[Math.floor(Math.random() * COLORS.length)];
+}
+
+function shuffle(array) {
+  const result = [...array];
+
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+
+  return result;
+}
+
+// ==========================================
+// GAME STATE
+// ==========================================
+
+let gameMode = null;
+let players = [];
+let currentPlayerIndex = 0;
+let currentRound = 1;
+let totalRounds = 3;
+let turnDuration = 5;
+
+let challenge = null;
+let timerInterval = null;
+let switchTimeout = null;
+let turnStartTime = 0;
+let timeLeft = 0;
+let turnFinished = false;
+
+let turnScore = 0;
+let turnResult = "";
+let bestStreak = 0;
+let currentStreak = 0;
+let correctCount = 0;
+let wrongCount = 0;
+let timeoutCount = 0;
+let turnHistory = [];
+
+// ==========================================
+// SCREEN MANAGEMENT
+// ==========================================
+
+function showScreen(screenId) {
+  screens.forEach((id) => {
+    const screen = $(id);
+    if (screen) screen.classList.add("hidden");
   });
+
+  const target = $(screenId);
+  if (target) target.classList.remove("hidden");
 
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function randomItem(items) {
-  return items[Math.floor(Math.random() * items.length)];
+// ==========================================
+// MODE SELECTION
+// ==========================================
+
+function initModeSelection() {
+  const modeCards = document.querySelectorAll("[data-mode]");
+  const continueButton = $("continueModeBtn");
+
+  modeCards.forEach((card) => {
+    card.addEventListener("click", () => {
+      gameMode = card.dataset.mode;
+
+      modeCards.forEach((item) => {
+        item.classList.toggle("selected", item === card);
+      });
+
+      if (continueButton) {
+        continueButton.disabled = false;
+        continueButton.textContent =
+          gameMode === "single"
+            ? "Continue to Solo Setup →"
+            : "Continue to Multiplayer Setup →";
+      }
+    });
+  });
+
+  if (continueButton) {
+    continueButton.addEventListener("click", () => {
+      if (!gameMode) return;
+
+      if (gameMode === "single") {
+        // Solo mode uses one player.
+        if ($("playerNames")) {
+          $("playerNames").value = "Player 1";
+        }
+
+        showScreen("setupScreen");
+      } else {
+        if ($("playerNames") && !$("playerNames").value.trim()) {
+          $("playerNames").value =
+            "Player 1\nPlayer 2\nPlayer 3\nPlayer 4";
+        }
+
+        showScreen("setupScreen");
+      }
+
+      updateModeSetup();
+    });
+  }
 }
 
-function randomDifferentColor(color) {
-  const choices = COLORS.filter((item) => item !== color);
-  return randomItem(choices);
+function updateModeSetup() {
+  const heading = $("setupScreen")?.querySelector("h1");
+  const nameInput = $("playerNames");
+  const nameField = nameInput?.closest(".form-group, .input-group");
+
+  if (gameMode === "single") {
+    if (heading) heading.textContent = "Solo Panic Challenge!";
+
+    if (nameInput) {
+      nameInput.value = "Player 1";
+      nameInput.disabled = true;
+    }
+
+    if (nameField) nameField.style.display = "none";
+  } else {
+    if (heading) heading.textContent = "Set Up Your Players!";
+
+    if (nameInput) {
+      nameInput.disabled = false;
+      if (nameInput.value.trim() === "Player 1") {
+        nameInput.value =
+          "Player 1\nPlayer 2\nPlayer 3\nPlayer 4";
+      }
+    }
+
+    if (nameField) nameField.style.display = "";
+  }
 }
 
-function currentPlayer() {
-  return state.players[state.currentIndex];
-}
-
-function escapeHTML(value) {
-  return String(value).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  })[character]);
-}
-
-function showError(message) {
-  $("setupError").textContent = message;
-}
+// ==========================================
+// PLAYER SETUP
+// ==========================================
 
 function startGame() {
-  const names = $("playerNames").value
-    .split(/\r?\n/)
+  const namesText = $("playerNames")?.value || "";
+  const names = namesText
+    .split("\n")
     .map((name) => name.trim())
     .filter(Boolean);
 
-  if (names.length < 2) {
-    showError("Add at least 2 player names to start!");
+  if (gameMode === "single") {
+    names.length = 0;
+    names.push("Player 1");
+  }
+
+  if (names.length < 1 || (gameMode === "multi" && names.length < 2)) {
+    if ($("setupError")) {
+      $("setupError").textContent =
+        "Multiplayer needs at least 2 players!";
+      $("setupError").classList.remove("hidden");
+    }
     return;
   }
 
   if (names.length > 100) {
-    showError("For this version, please use 100 players or fewer.");
+    if ($("setupError")) {
+      $("setupError").textContent = "Maximum 100 players allowed.";
+      $("setupError").classList.remove("hidden");
+    }
     return;
   }
 
   if (names.some((name) => name.length > 30)) {
-    showError("Keep each player name to 30 characters or fewer.");
+    if ($("setupError")) {
+      $("setupError").textContent =
+        "Player names must be 30 characters or fewer.";
+      $("setupError").classList.remove("hidden");
+    }
     return;
   }
 
-  const normalizedNames = names.map((name) => name.toLowerCase());
-  if (new Set(normalizedNames).size !== normalizedNames.length) {
-    showError("Give each player a unique name so the scoreboard is clear.");
+  const uniqueNames = names.map((name) => name.toLowerCase());
+
+  if (new Set(uniqueNames).size !== uniqueNames.length) {
+    if ($("setupError")) {
+      $("setupError").textContent =
+        "Please use different names for every player.";
+      $("setupError").classList.remove("hidden");
+    }
     return;
   }
 
-  state.players = names.map((name) => ({
+  if ($("setupError")) $("setupError").classList.add("hidden");
+
+  totalRounds = Number($("roundCount")?.value || 3);
+  turnDuration = Number($("turnDuration")?.value || 5);
+
+  players = names.map((name) => ({
     name,
     score: 0,
     correct: 0,
     wrong: 0,
     timeouts: 0,
-    streak: 0,
-    bestStreak: 0
+    bestStreak: 0,
+    streak: 0
   }));
 
-  state.roundsPerPlayer = Number($("roundCount").value);
-  state.turnDuration = Number($("turnDuration").value);
+  currentPlayerIndex = 0;
+  currentRound = 1;
+  turnHistory = [];
 
-  resetMatchProgress();
-  showError("");
   showPassScreen();
 }
 
-function resetMatchProgress() {
-  stopTimers();
-
-  state.currentIndex = 0;
-  state.roundForPlayer = 1;
-  state.challenge = null;
-  state.answered = false;
-  state.correctTotal = 0;
-  state.wrongTotal = 0;
-  state.streak = 0;
-  state.bestStreak = 0;
-  state.turnResult = null;
-
-  state.players.forEach((player) => {
-    player.score = 0;
-    player.correct = 0;
-    player.wrong = 0;
-    player.timeouts = 0;
-    player.streak = 0;
-    player.bestStreak = 0;
-  });
-}
+// ==========================================
+// PASS PHONE / START TURN
+// ==========================================
 
 function showPassScreen() {
-  stopTimers();
+  if (gameMode === "single") {
+    startTurn();
+    return;
+  }
 
-  const player = currentPlayer();
-  $("passAvatar").textContent = player.name.charAt(0).toUpperCase();
-  $("passPlayerName").textContent = player.name;
-  $("passRoundLabel").textContent =
-    `ROUND ${state.roundForPlayer} OF ${state.roundsPerPlayer}`;
+  const player = players[currentPlayerIndex];
+
+  if ($("passAvatar")) {
+    $("passAvatar").textContent = "🎮";
+  }
+
+  if ($("passPlayerName")) {
+    $("passPlayerName").textContent = player.name;
+  }
+
+  if ($("passRoundLabel")) {
+    $("passRoundLabel").textContent =
+      `Round ${currentRound} of ${totalRounds}`;
+  }
 
   showScreen("passScreen");
 }
 
 function startTurn() {
-  state.answered = false;
-  state.turnResult = null;
+  clearTimers();
 
-  const player = currentPlayer();
-  $("gameAvatar").textContent = player.name.charAt(0).toUpperCase();
-  $("gamePlayerName").textContent = player.name;
-  $("gameRoundLabel").textContent =
-    `ROUND ${state.roundForPlayer} / ${state.roundsPerPlayer}`;
+  const player = players[currentPlayerIndex];
+
+  if ($("gameAvatar")) $("gameAvatar").textContent = "🚨";
+  if ($("gamePlayerName")) {
+    $("gamePlayerName").textContent = player.name;
+  }
+
+  if ($("gameRoundLabel")) {
+    $("gameRoundLabel").textContent =
+      gameMode === "single"
+        ? `Solo Round ${currentRound} of ${totalRounds}`
+        : `Round ${currentRound} of ${totalRounds}`;
+  }
+
+  turnScore = 0;
+  turnFinished = false;
+  turnResult = "";
+  timeLeft = turnDuration;
+
+  challenge = createChallenge();
 
   resetButtons();
-  createChallenge();
+  renderChallenge();
+
   showScreen("gameScreen");
   beginTimer();
 }
 
+function createChallenge() {
+  const chosen = CHALLENGES[
+    Math.floor(Math.random() * CHALLENGES.length)
+  ];
+
+  return {
+    ...chosen,
+    ...chosen.create()
+  };
+}
+
+// ==========================================
+// CHALLENGE DISPLAY
+// ==========================================
+
+function renderChallenge() {
+  if (!challenge) return;
+
+  if ($("challengeBadge")) {
+    $("challengeBadge").textContent = challenge.badge;
+  }
+
+  if ($("challengeEmoji")) {
+    $("challengeEmoji").textContent = challenge.emoji;
+  }
+
+  if ($("challengeTitle")) {
+    $("challengeTitle").textContent = challenge.title;
+  }
+
+  if ($("challengeDescription")) {
+    $("challengeDescription").textContent = challenge.description;
+  }
+
+  const grid = $("buttonGrid");
+
+  if (grid) {
+    grid.querySelectorAll("[data-color]").forEach((button) => {
+      button.disabled = false;
+      button.classList.remove("correct", "wrong", "target-color");
+      button.textContent = button.dataset.color;
+      button.style.opacity = "1";
+    });
+  }
+
+  updateTargetHighlight();
+}
+
+function updateTargetHighlight() {
+  const grid = $("buttonGrid");
+  if (!grid) return;
+
+  grid.querySelectorAll("[data-color]").forEach((button) => {
+    button.classList.toggle(
+      "target-color",
+      button.dataset.color === challenge?.target
+    );
+  });
+}
+
 function resetButtons() {
-  document.querySelectorAll(".panic-button").forEach((button) => {
+  const grid = $("buttonGrid");
+  if (!grid) return;
+
+  grid.querySelectorAll("[data-color]").forEach((button) => {
     button.disabled = false;
-    button.classList.remove("correct-pick", "wrong-pick");
+    button.classList.remove("correct", "wrong", "target-color");
+    button.style.opacity = "1";
   });
 
-  $("timerArea");
-  document.querySelector(".timer-area").classList.remove("urgent");
-  $("timerBar").style.width = "100%";
-  $("switchNotice").classList.add("hidden");
-  $("freezeHint").classList.add("hidden");
-  $("challengeCard").classList.remove("freeze-card");
-}
-
-function createChallenge() {
-  const type = randomItem(["match", "avoid", "reverse", "switch", "freeze"]);
-  const target = randomItem(COLORS);
-
-  state.challenge = {
-    type,
-    target,
-    initialTarget: target,
-    changed: false
-  };
-
-  const challenge = state.challenge;
-
-  $("challengeBadge").textContent = {
-    match: "⚡ MATCH IT",
-    avoid: "🚫 AVOID IT",
-    reverse: "🔄 FOLLOW THE CYCLE",
-    switch: "👀 STAY ALERT",
-    freeze: "🧊 FREEZE CHALLENGE"
-  }[type];
-
-  $("challengeEmoji").textContent = {
-    match: "🎯",
-    avoid: "🙅",
-    reverse: "🔄",
-    switch: "⚡",
-    freeze: "🧊"
-  }[type];
-
-  $("challengeDescription").textContent = {
-    match: "Choose the exact colour named below.",
-    avoid: "Choose ANY colour except the one named below.",
-    reverse: "Follow the colour cycle shown in the instruction.",
-    switch: "The target changes while the timer is running!",
-    freeze: "Hands off! Do not touch any colour button."
-  }[type];
-
-  $("challengeTitle").textContent = {
-    match: `Tap ${COLOR_NAMES[target]}!`,
-    avoid: `Don't tap ${COLOR_NAMES[target]}!`,
-    reverse: `After ${COLOR_NAMES[target]}...`,
-    switch: `Tap ${COLOR_NAMES[target]}!`,
-    freeze: "DON'T TOUCH!"
-  }[type];
-
-  if (type === "reverse") {
-    const nextColor = COLORS[(COLORS.indexOf(target) + 1) % COLORS.length];
-    challenge.correctColor = nextColor;
-    $("challengeTitle").textContent =
-      `${COLOR_NAMES[target]} → ${COLOR_NAMES[nextColor]}!`;
-    $("challengeDescription").textContent =
-      "The cycle is RED → BLUE → YELLOW → GREEN → RED. Tap the next colour.";
-  }
-
-  if (type === "freeze") {
-    $("freezeHint").classList.remove("hidden");
-    $("challengeDescription").textContent =
-      "Let the timer reach zero without pressing anything.";
-  }
-
-  if (type === "switch") {
-    $("switchNotice").classList.remove("hidden");
-    $("switchNotice").textContent = "⚠️ The target will change during this turn!";
+  if ($("freezeHint")) {
+    $("freezeHint").classList.toggle(
+      "hidden",
+      challenge?.type !== "freeze"
+    );
   }
 }
+
+// ==========================================
+// TIMER
+// ==========================================
 
 function beginTimer() {
-  stopTimers();
-
-  state.startedAt = Date.now();
-  state.deadline = state.startedAt + state.turnDuration * 1000;
-
-  const totalMs = state.turnDuration * 1000;
-
-  if (state.challenge.type === "switch") {
-    const delay = Math.min(1500, Math.floor(totalMs * 0.45));
-
-    state.switchTimeout = setTimeout(() => {
-      if (state.answered || !state.challenge) return;
-
-      const nextTarget = randomDifferentColor(state.challenge.target);
-      state.challenge.target = nextTarget;
-      state.challenge.changed = true;
-
-      $("challengeTitle").textContent = `NOW TAP ${COLOR_NAMES[nextTarget]}!`;
-      $("challengeEmoji").textContent = COLOR_EMOJI[nextTarget];
-      $("switchNotice").textContent = "⚡ SWITCH! The new colour is active NOW!";
-      $("challengeCard").classList.add("switch-flash");
-
-      setTimeout(() => {
-        $("challengeCard").classList.remove("switch-flash");
-      }, 400);
-    }, delay);
-  }
-
+  turnStartTime = Date.now();
+  timeLeft = turnDuration;
   updateTimer();
-  state.timerInterval = setInterval(updateTimer, 50);
+
+  timerInterval = setInterval(() => {
+    if (turnFinished) return;
+
+    const elapsed = (Date.now() - turnStartTime) / 1000;
+    timeLeft = Math.max(0, turnDuration - elapsed);
+
+    updateTimer();
+
+    if (
+      challenge.type === "switch" &&
+      !challenge.switched &&
+      elapsed >= Math.min(1.5, turnDuration * 0.45)
+    ) {
+      switchTarget();
+    }
+
+    if (timeLeft <= 0) {
+      finishByTimeout();
+    }
+  }, 50);
 }
 
 function updateTimer() {
-  if (state.answered) return;
+  const seconds = Math.max(0, timeLeft);
 
-  const remaining = Math.max(0, state.deadline - Date.now());
-  const fraction = remaining / (state.turnDuration * 1000);
+  if ($("timerNumber")) {
+    $("timerNumber").textContent = seconds.toFixed(1);
+  }
 
-  $("timerBar").style.width = `${fraction * 100}%`;
-  $("timerNumber").textContent = (remaining / 1000).toFixed(1);
+  const bar = $("timerBar");
+  if (bar) {
+    const percent = Math.max(0, (seconds / turnDuration) * 100);
 
-  document.querySelector(".timer-area").classList.toggle("urgent", remaining <= 1800);
+    bar.style.width = `${percent}%`;
 
-  if (remaining <= 0) {
-    finishByTimeout();
+    const timerArea = bar.closest(".timer-area");
+    if (timerArea) {
+      timerArea.classList.toggle("urgent", seconds <= 2);
+    }
   }
 }
 
-function stopTimers() {
-  if (state.timerInterval !== null) {
-    clearInterval(state.timerInterval);
-    state.timerInterval = null;
+function switchTarget() {
+  if (turnFinished || challenge.type !== "switch") return;
+
+  challenge.switched = true;
+  challenge.target = challenge.nextTarget;
+  challenge.answer = challenge.nextTarget;
+
+  if ($("challengeDescription")) {
+    $("challengeDescription").textContent =
+      `SWITCH! Now tap ${challenge.target}!`;
   }
 
-  if (state.switchTimeout !== null) {
-    clearTimeout(state.switchTimeout);
-    state.switchTimeout = null;
+  updateTargetHighlight();
+
+  if ($("switchNotice")) {
+    $("switchNotice").classList.remove("hidden");
+    $("switchNotice").classList.add("switch-flash");
   }
 }
 
-function disableButtons() {
-  document.querySelectorAll(".panic-button").forEach((button) => {
-    button.disabled = true;
-  });
+function clearTimers() {
+  if (timerInterval) clearInterval(timerInterval);
+  if (switchTimeout) clearTimeout(switchTimeout);
+
+  timerInterval = null;
+  switchTimeout = null;
 }
 
-function handleButtonPress(color, button) {
-  if (state.answered) return;
+// ==========================================
+// BUTTON PRESS / SCORING
+// ==========================================
 
-  const challenge = state.challenge;
+function handleButtonPress(color) {
+  if (turnFinished || !challenge) return;
+
+  const button = document.querySelector(
+    `[data-color="${color}"]`
+  );
 
   if (challenge.type === "freeze") {
-    button.classList.add("wrong-pick");
-    finishTurn("wrong", "You touched a button during the freeze!");
+    if (button) button.classList.add("wrong");
+
+    turnScore = -1;
+    wrongCount++;
+    players[currentPlayerIndex].wrong++;
+    players[currentPlayerIndex].streak = 0;
+
+    finishTurn(
+      "wrong",
+      "You panicked!",
+      "You tapped during Freeze. That's a -1 penalty!"
+    );
+
     return;
   }
 
-  let correct = false;
+  let isCorrect = false;
 
-  if (challenge.type === "match" || challenge.type === "switch") {
-    correct = color === challenge.target;
+  if (challenge.type === "match") {
+    isCorrect = color === challenge.target;
   } else if (challenge.type === "avoid") {
-    correct = color !== challenge.target;
+    isCorrect = color !== challenge.target;
   } else if (challenge.type === "reverse") {
-    correct = color === challenge.correctColor;
+    isCorrect = color === challenge.answer;
+  } else if (challenge.type === "switch") {
+    isCorrect = color === challenge.target;
   }
 
-  button.classList.add(correct ? "correct-pick" : "wrong-pick");
+  if (isCorrect) {
+    turnScore = 2;
+    correctCount++;
 
-  if (correct) {
-    finishTurn("correct", getSuccessMessage());
+    const player = players[currentPlayerIndex];
+    player.correct++;
+    player.streak++;
+    player.bestStreak = Math.max(
+      player.bestStreak,
+      player.streak
+    );
+
+    currentStreak++;
+    bestStreak = Math.max(bestStreak, currentStreak);
+
+    if (button) button.classList.add("correct");
+
+    finishTurn(
+      "correct",
+      "Nailed it!",
+      "Quick reflexes! You earned +2 points."
+    );
   } else {
-    finishTurn("wrong", getFailureMessage(color));
+    turnScore = -1;
+    wrongCount++;
+
+    const player = players[currentPlayerIndex];
+    player.wrong++;
+    player.streak = 0;
+    currentStreak = 0;
+
+    if (button) button.classList.add("wrong");
+
+    finishTurn(
+      "wrong",
+      "Oops! Wrong button!",
+      "The panic got you. You lost 1 point."
+    );
   }
-}
-
-function getSuccessMessage() {
-  const messages = [
-    "Lightning-fast reflexes! ⚡",
-    "Your brain is ON FIRE! 🔥",
-    "Clean move. Zero panic! 😎",
-    "You understood the assignment! 🎯",
-    "Too quick for the chaos! 🚀"
-  ];
-
-  return randomItem(messages);
-}
-
-function getFailureMessage(color) {
-  const messages = [
-    `Oops! ${COLOR_NAMES[color]} wasn't the move. 😅`,
-    "Panic got the better of you! 🫠",
-    "The buttons won this round. 😂",
-    "Slow down... actually, speed up! 🤣",
-    "The rules got you this time! 🌀"
-  ];
-
-  return randomItem(messages);
 }
 
 function finishByTimeout() {
-  if (state.answered) return;
+  if (turnFinished) return;
 
-  if (state.challenge.type === "freeze") {
-    finishTurn("correct", "You stayed calm and survived! 🧊");
+  if (challenge?.type === "freeze") {
+    turnScore = 2;
+    correctCount++;
+
+    const player = players[currentPlayerIndex];
+    player.correct++;
+    player.streak++;
+    player.bestStreak = Math.max(
+      player.bestStreak,
+      player.streak
+    );
+
+    finishTurn(
+      "correct",
+      "Ice cold!",
+      "You stayed frozen! +2 points."
+    );
   } else {
-    finishTurn("timeout", "Time's up! The panic won this one. ⏰");
+    turnScore = 0;
+    timeoutCount++;
+
+    players[currentPlayerIndex].timeouts++;
+    players[currentPlayerIndex].streak = 0;
+    currentStreak = 0;
+
+    finishTurn(
+      "timeout",
+      "Time's up!",
+      "You ran out of time. No points this turn."
+    );
   }
 }
 
-function finishTurn(outcome, message) {
-  if (state.answered) return;
+function finishTurn(status, title, message) {
+  if (turnFinished) return;
 
-  state.answered = true;
-  stopTimers();
-  disableButtons();
+  turnFinished = true;
+  clearTimers();
 
-  const player = currentPlayer();
-  let points = 0;
+  const player = players[currentPlayerIndex];
+  player.score += turnScore;
 
-  if (outcome === "correct") {
-    points = 2;
-    player.score += points;
-    player.correct += 1;
-    player.streak += 1;
-    player.bestStreak = Math.max(player.bestStreak, player.streak);
-    state.correctTotal += 1;
-    state.streak += 1;
-    state.bestStreak = Math.max(state.bestStreak, state.streak);
-  } else if (outcome === "wrong") {
-    points = -1;
-    player.score += points;
-    player.wrong += 1;
-    player.streak = 0;
-    state.wrongTotal += 1;
-    state.streak = 0;
-  } else {
-    player.timeouts += 1;
-    player.streak = 0;
-    state.streak = 0;
+  turnHistory.push({
+    player: player.name,
+    round: currentRound,
+    score: turnScore,
+    status,
+    challenge: challenge.title
+  });
+
+  if ($("resultEmoji")) {
+    $("resultEmoji").textContent =
+      status === "correct" ? "🎉" :
+      status === "wrong" ? "😵" : "⏰";
   }
 
-  state.turnResult = { outcome, points, message };
+  if ($("resultBadge")) {
+    $("resultBadge").textContent =
+      status === "correct" ? "SUCCESS" :
+      status === "wrong" ? "PANIC MOMENT" : "TIME OUT";
+  }
 
-  $("resultEmoji").textContent = {
-    correct: "🎉",
-    wrong: "💥",
-    timeout: "⏰"
-  }[outcome];
+  if ($("resultTitle")) $("resultTitle").textContent = title;
+  if ($("resultMessage")) $("resultMessage").textContent = message;
 
-  $("resultBadge").textContent = {
-    correct: "NICE REFLEXES!",
-    wrong: "PANIC DETECTED!",
-    timeout: "TIME'S UP!"
-  }[outcome];
+  if ($("turnPoints")) {
+    $("turnPoints").textContent =
+      turnScore > 0 ? `+${turnScore}` : `${turnScore}`;
+  }
 
-  $("resultTitle").textContent = {
-    correct: "Nailed it!",
-    wrong: "Not this time!",
-    timeout: "Too slow!"
-  }[outcome];
+  if ($("totalScoreLabel")) {
+    $("totalScoreLabel").textContent =
+      `Total score: ${player.score}`;
+  }
 
-  $("resultMessage").textContent = message;
-  $("turnPoints").textContent = points > 0 ? `+${points}` : String(points);
-  $("totalScoreLabel").textContent = `Total score: ${player.score}`;
-  $("correctCount").textContent = player.correct;
-  $("wrongCount").textContent = player.wrong;
-  $("bestStreak").textContent = player.bestStreak;
+  if ($("correctCount")) {
+    $("correctCount").textContent = player.correct;
+  }
 
-  $("nextTurnBtn").innerHTML = isLastTurn()
-    ? 'SEE FINAL RESULTS <span>🏆</span>'
-    : 'NEXT PLAYER <span>→</span>';
+  if ($("wrongCount")) {
+    $("wrongCount").textContent = player.wrong;
+  }
+
+  if ($("bestStreak")) {
+    $("bestStreak").textContent = player.bestStreak;
+  }
 
   showScreen("resultScreen");
+
+  const nextButton = $("nextTurnBtn");
+  if (nextButton) {
+    nextButton.textContent =
+      gameMode === "single"
+        ? currentRound >= totalRounds
+          ? "See My Results 🏆"
+          : "Next Challenge →"
+        : currentRound >= totalRounds &&
+          currentPlayerIndex >= players.length - 1
+          ? "See Leaderboard 🏆"
+          : "Next Turn →";
+  }
 }
 
-function isLastTurn() {
-  return (
-    state.currentIndex === state.players.length - 1 &&
-    state.roundForPlayer === state.roundsPerPlayer
-  );
-}
+// ==========================================
+// NEXT TURN / ROUND
+// ==========================================
 
 function nextTurn() {
-  if (isLastTurn()) {
-    showLeaderboard();
+  if (gameMode === "single") {
+    if (currentRound >= totalRounds) {
+      showLeaderboard();
+    } else {
+      currentRound++;
+      startTurn();
+    }
     return;
   }
 
-  if (state.currentIndex < state.players.length - 1) {
-    state.currentIndex += 1;
+  if (currentPlayerIndex < players.length - 1) {
+    currentPlayerIndex++;
   } else {
-    state.currentIndex = 0;
-    state.roundForPlayer += 1;
+    currentPlayerIndex = 0;
+    currentRound++;
   }
 
-  showPassScreen();
+  if (currentRound > totalRounds) {
+    showLeaderboard();
+  } else {
+    showPassScreen();
+  }
+}
+
+// ==========================================
+// FINAL RESULTS / LEADERBOARD
+// ==========================================
+
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
 }
 
 function showLeaderboard() {
-  stopTimers();
+  clearTimers();
 
-  const sorted = [...state.players].sort((a, b) =>
-    b.score - a.score ||
-    b.correct - a.correct ||
-    a.wrong - b.wrong ||
-    a.name.localeCompare(b.name)
-  );
+  const ranked = [...players].sort((a, b) => b.score - a.score);
 
-  const topScore = sorted[0].score;
-  const tied = sorted.filter((player) => player.score === topScore);
+  if (gameMode === "single") {
+    if ($("finalHeading")) {
+      $("finalHeading").textContent = "Solo Results!";
+    }
 
-  $("finalHeading").textContent =
-    tied.length > 1 ? "It's a tie! 🤝" : `${sorted[0].name} wins!`;
+    if ($("finalSubtitle")) {
+      $("finalSubtitle").textContent =
+        `You scored ${ranked[0].score} points!`;
+    }
+  } else {
+    if ($("finalHeading")) {
+      $("finalHeading").textContent = "Panic Button Champions!";
+    }
 
-  $("finalSubtitle").textContent =
-    tied.length > 1
-      ? "A shared crown! Those reflexes were evenly matched."
-      : "The calmest brain in the room takes the crown.";
+    if ($("finalSubtitle")) {
+      const winners = ranked.filter(
+        (player) => player.score === ranked[0].score
+      );
+
+      $("finalSubtitle").textContent =
+        winners.length > 1
+          ? `It's a tie between ${winners.map((p) => p.name).join(" and ")}!`
+          : `${ranked[0].name} is the Panic Button champion!`;
+    }
+  }
 
   const podium = $("podium");
-  podium.innerHTML = "";
 
-  const places = [
-    { player: sorted[1], className: "second", medal: "🥈" },
-    { player: sorted[0], className: "first", medal: "🥇" },
-    { player: sorted[2], className: "third", medal: "🥉" }
-  ];
-
-  places.forEach(({ player, className, medal }) => {
-    if (!player) return;
-
-    const item = document.createElement("div");
-    item.className = `podium-place ${className}`;
-    item.innerHTML = `
-      <div style="font-size:29px">${medal}</div>
-      <div class="podium-name">${escapeHTML(player.name)}</div>
-      <div class="podium-score">${player.score} pts</div>
-      <div class="podium-block">${medal}</div>
-    `;
-    podium.appendChild(item);
-  });
+  if (podium) {
+    if (gameMode === "single") {
+      podium.innerHTML = `
+        <div class="podium-place first">
+          <div class="podium-medal">🏆</div>
+          <div class="podium-name">${escapeHTML(ranked[0].name)}</div>
+          <div class="podium-score">${ranked[0].score} points</div>
+        </div>
+      `;
+    } else {
+      podium.innerHTML = ranked.slice(0, 3).map((player, index) => `
+        <div class="podium-place ${["first", "second", "third"][index]}">
+          <div class="podium-medal">${["🥇", "🥈", "🥉"][index]}</div>
+          <div class="podium-name">${escapeHTML(player.name)}</div>
+          <div class="podium-score">${player.score} pts</div>
+        </div>
+      `).join("");
+    }
+  }
 
   const scoreList = $("finalScoreList");
-  scoreList.innerHTML = "";
 
-  sorted.forEach((player, index) => {
-    const row = document.createElement("div");
-    row.className = "score-row";
-    row.innerHTML = `
-      <div class="score-rank">${index + 1}</div>
-      <div class="score-name">
-        ${escapeHTML(player.name)}
-        <div class="score-detail">
-          ${player.correct} correct · ${player.wrong} mistakes ·
-          ${player.timeouts} timeouts · best streak ${player.bestStreak}
-        </div>
+  if (scoreList) {
+    scoreList.innerHTML = ranked.map((player, index) => `
+      <div class="score-row">
+        <span class="score-rank">#${index + 1}</span>
+        <span class="score-player">${escapeHTML(player.name)}</span>
+        <span class="score-points">${player.score} pts</span>
+        <span class="score-stats">
+          ✅ ${player.correct} · ❌ ${player.wrong} · ⏰ ${player.timeouts}
+        </span>
       </div>
-      <div class="score-total">${player.score}</div>
-    `;
-    scoreList.appendChild(row);
-  });
+    `).join("");
+  }
 
   showScreen("leaderboardScreen");
 }
 
-function endGame() {
-  const confirmed = window.confirm("End the game and show the current scores?");
-  if (!confirmed) return;
-
-  stopTimers();
-  state.answered = true;
-  showLeaderboard();
-}
+// ==========================================
+// REPLAY / NEW GAME / QUIT
+// ==========================================
 
 function playAgain() {
-  resetMatchProgress();
-  showPassScreen();
+  clearTimers();
+
+  players.forEach((player) => {
+    player.score = 0;
+    player.correct = 0;
+    player.wrong = 0;
+    player.timeouts = 0;
+    player.bestStreak = 0;
+    player.streak = 0;
+  });
+
+  currentPlayerIndex = 0;
+  currentRound = 1;
+  turnHistory = [];
+  currentStreak = 0;
+  bestStreak = 0;
+
+  if (gameMode === "single") {
+    startTurn();
+  } else {
+    showPassScreen();
+  }
 }
 
 function newGame() {
-  stopTimers();
+  clearTimers();
 
-  $("playerNames").value = state.players.map((player) => player.name).join("\n");
-  showError("");
-  showScreen("setupScreen");
+  gameMode = null;
+  players = [];
+  currentPlayerIndex = 0;
+  currentRound = 1;
+  turnHistory = [];
+  currentStreak = 0;
+  bestStreak = 0;
+
+  const modeCards = document.querySelectorAll("[data-mode]");
+  modeCards.forEach((card) => card.classList.remove("selected"));
+
+  const continueButton = $("continueModeBtn");
+  if (continueButton) {
+    continueButton.disabled = true;
+    continueButton.textContent = "Choose a mode first →";
+  }
+
+  const nameInput = $("playerNames");
+  if (nameInput) {
+    nameInput.disabled = false;
+    nameInput.value = "Player 1\nPlayer 2\nPlayer 3\nPlayer 4";
+  }
+
+  const nameField = nameInput?.closest(".form-group, .input-group");
+  if (nameField) nameField.style.display = "";
+
+  showScreen("modeScreen");
 }
 
-$("startGameBtn").addEventListener("click", startGame);
-$("readyBtn").addEventListener("click", startTurn);
-$("nextTurnBtn").addEventListener("click", nextTurn);
-$("quitBtn").addEventListener("click", endGame);
-$("endFromPassBtn").addEventListener("click", endGame);
-$("playAgainBtn").addEventListener("click", playAgain);
-$("newGameBtn").addEventListener("click", newGame);
-
-document.querySelectorAll(".panic-button").forEach((button) => {
-  button.addEventListener("click", () => {
-    handleButtonPress(button.dataset.color, button);
-  });
-});
-
-// Prevent a browser refresh from being accidentally triggered by Enter
-// while the user is playing. The game itself needs no form submission.
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" &&
-      !$("gameScreen").classList.contains("hidden")) {
-    endGame();
+function endGame() {
+  if (confirm("End this game and view the final results?")) {
+    showLeaderboard();
   }
-});
+}
+
+// ==========================================
+// BUTTON EVENTS
+// ==========================================
+
+function initGame() {
+  initModeSelection();
+
+  $("startGameBtn")?.addEventListener("click", startGame);
+  $("readyBtn")?.addEventListener("click", startTurn);
+  $("nextTurnBtn")?.addEventListener("click", nextTurn);
+  $("playAgainBtn")?.addEventListener("click", playAgain);
+  $("newGameBtn")?.addEventListener("click", newGame);
+  $("quitBtn")?.addEventListener("click", endGame);
+  $("endFromPassBtn")?.addEventListener("click", endGame);
+
+  const grid = $("buttonGrid");
+
+  if (grid) {
+    grid.querySelectorAll("[data-color]").forEach((button) => {
+      button.addEventListener("click", () => {
+        handleButtonPress(button.dataset.color);
+      });
+    });
+  }
+
+  showScreen("modeScreen");
+}
+
+document.addEventListener("DOMContentLoaded", initGame);
