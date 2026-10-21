@@ -1,0 +1,188 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#fff8ed">
+  <meta name="description" content="Panic Button — a colourful reaction party game.">
+  <title>Panic Button! 🚨</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Panic Button home">
+        <span class="brand-icon">⚡</span>
+        <span>PANIC<span class="brand-accent">!</span></span>
+      </a>
+      <div class="top-tag"><span class="live-dot"></span> PARTY ARCADE</div>
+    </header>
+
+    <main>
+      <section id="setupScreen" class="screen setup-screen">
+        <div class="hero">
+          <div class="hero-sticker sticker-one">⚡</div>
+          <div class="hero-sticker sticker-two">😵‍💫</div>
+          <div class="eyebrow">YOUR REFLEXES ARE ABOUT TO BE TESTED</div>
+          <h1>Think fast.<br><span>Don't panic.</span></h1>
+          <p>Four buttons. Sneaky rules. Very little time.<br>Can your group keep its cool?</p>
+          <div class="button-preview" aria-hidden="true">
+            <span class="preview-button red"></span>
+            <span class="preview-button blue"></span>
+            <span class="preview-button yellow"></span>
+            <span class="preview-button green"></span>
+          </div>
+        </div>
+
+        <div class="setup-card">
+          <div class="section-heading">
+            <span class="section-icon">👥</span>
+            <div>
+              <h2>Build your panic squad</h2>
+              <p>Pass the phone after every turn.</p>
+            </div>
+          </div>
+
+          <label for="playerNames">Player names <span class="muted">(one per line)</span></label>
+          <textarea id="playerNames" rows="4" maxlength="1500"
+            placeholder="Aarav&#10;Priya&#10;Rahul&#10;Ananya">Player 1
+Player 2
+Player 3
+Player 4</textarea>
+          <div class="field-hint">At least 2 players. Add as many as you like!</div>
+
+          <div class="settings-grid">
+            <div class="setting">
+              <label for="roundCount">Rounds per player</label>
+              <select id="roundCount">
+                <option value="3">3 — Quick match</option>
+                <option value="5" selected>5 — Just right</option>
+                <option value="10">10 — Full panic</option>
+                <option value="15">15 — Chaos mode</option>
+                <option value="20">20 — No mercy</option>
+              </select>
+            </div>
+            <div class="setting">
+              <label for="turnDuration">Seconds per turn</label>
+              <select id="turnDuration">
+                <option value="3">3 seconds — Insane</option>
+                <option value="5" selected>5 seconds — Normal</option>
+                <option value="7">7 seconds — Relaxed</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="how-it-works">
+            <div class="how-icon">💡</div>
+            <div>
+              <strong>One important rule</strong>
+              <p>Read the instruction first! Sometimes you must match a colour, sometimes avoid it, and sometimes the rule changes mid-turn.</p>
+            </div>
+          </div>
+
+          <button id="startGameBtn" class="primary-btn">
+            LET'S PANIC <span>→</span>
+          </button>
+          <p id="setupError" class="error-message" role="alert"></p>
+        </div>
+        <p class="footer-note">MADE FOR FRIENDS • NO ACCOUNTS • JUST CHAOS</p>
+      </section>
+
+      <section id="passScreen" class="screen pass-screen hidden">
+        <div class="pass-decoration">📣</div>
+        <div class="eyebrow">NEXT PLAYER UP</div>
+        <h1>Pass the phone!</h1>
+        <div class="player-avatar" id="passAvatar">P</div>
+        <h2 id="passPlayerName">Player 1</h2>
+        <p>Make sure nobody else can see the screen.<br>Ready to test those reflexes?</p>
+        <div class="pass-round-pill" id="passRoundLabel">ROUND 1 OF 5</div>
+        <button id="readyBtn" class="primary-btn">I'M READY <span>→</span></button>
+        <button id="endFromPassBtn" class="text-btn">End game</button>
+      </section>
+
+      <section id="gameScreen" class="screen game-screen hidden">
+        <div class="game-meta">
+          <div class="player-chip">
+            <span class="mini-avatar" id="gameAvatar">P</span>
+            <span id="gamePlayerName">Player 1</span>
+          </div>
+          <div class="round-chip" id="gameRoundLabel">ROUND 1 / 5</div>
+          <button id="quitBtn" class="quit-btn" aria-label="End game">✕</button>
+        </div>
+
+        <div class="timer-area">
+          <div class="timer-track">
+            <div id="timerBar" class="timer-bar"></div>
+          </div>
+          <div class="timer-text"><span id="timerNumber">5.0</span><span class="timer-unit">SEC</span></div>
+        </div>
+
+        <div id="challengeCard" class="challenge-card">
+          <div id="challengeBadge" class="challenge-badge">⚡ REACT</div>
+          <div id="challengeEmoji" class="challenge-emoji">🎯</div>
+          <h1 id="challengeTitle">Tap BLUE!</h1>
+          <p id="challengeDescription">Choose the correct button before time runs out.</p>
+          <div id="switchNotice" class="switch-notice hidden">👀 The rule can change. Stay alert!</div>
+        </div>
+
+        <div id="buttonGrid" class="button-grid" aria-label="Reaction buttons">
+          <button class="panic-button color-red" data-color="RED" aria-label="Red button">
+            <span class="button-symbol">●</span><span>RED</span>
+          </button>
+          <button class="panic-button color-blue" data-color="BLUE" aria-label="Blue button">
+            <span class="button-symbol">◆</span><span>BLUE</span>
+          </button>
+          <button class="panic-button color-yellow" data-color="YELLOW" aria-label="Yellow button">
+            <span class="button-symbol">★</span><span>YELLOW</span>
+          </button>
+          <button class="panic-button color-green" data-color="GREEN" aria-label="Green button">
+            <span class="button-symbol">▲</span><span>GREEN</span>
+          </button>
+        </div>
+
+        <div id="freezeHint" class="freeze-hint hidden">🧊 DON'T TOUCH ANY BUTTON. Just survive!</div>
+        <div class="game-bottom-note">TRUST YOUR BRAIN. NOT YOUR PANIC. 🧠</div>
+      </section>
+
+      <section id="resultScreen" class="screen result-screen hidden">
+        <div id="resultEmoji" class="result-emoji">🎉</div>
+        <div id="resultBadge" class="eyebrow">NICE REFLEXES!</div>
+        <h1 id="resultTitle">Nailed it!</h1>
+        <p id="resultMessage">Your reaction was spot on.</p>
+        <div class="points-card">
+          <span>TURN SCORE</span>
+          <strong id="turnPoints">+2</strong>
+          <small id="totalScoreLabel">Total score: 2</small>
+        </div>
+        <div class="result-stats">
+          <div><strong id="correctCount">0</strong><span>Correct</span></div>
+          <div><strong id="wrongCount">0</strong><span>Mistakes</span></div>
+          <div><strong id="bestStreak">0</strong><span>Best streak</span></div>
+        </div>
+        <button id="nextTurnBtn" class="primary-btn">NEXT PLAYER <span>→</span></button>
+      </section>
+
+      <section id="leaderboardScreen" class="screen leaderboard-screen hidden">
+        <div class="leaderboard-icon">🏆</div>
+        <div class="eyebrow">THE PANIC HAS ENDED</div>
+        <h1 id="finalHeading">Panic champion!</h1>
+        <p id="finalSubtitle">Let's see who kept their cool.</p>
+        <div id="podium" class="podium"></div>
+        <div class="all-scores-card">
+          <div class="scores-header"><h2>Final scoreboard</h2><span>📊</span></div>
+          <div id="finalScoreList"></div>
+        </div>
+        <div class="final-actions">
+          <button id="playAgainBtn" class="primary-btn">PLAY AGAIN <span>↻</span></button>
+          <button id="newGameBtn" class="secondary-btn">NEW PLAYERS</button>
+        </div>
+        <p class="footer-note">SAME FRIENDS. NEW PANIC. ⚡</p>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+</body>
+</html>
