@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,6 +20,40 @@
     </header>
 
     <main>
+      
+<section id="modeScreen" class="screen mode-screen">
+  <div class="hero">
+    <div class="hero-emoji">🚨</div>
+    <p class="eyebrow">READY FOR THE CHAOS?</p>
+    <h1>Choose your <span>panic mode!</span></h1>
+    <p>Play against the clock or challenge your friends.</p>
+  </div>
+
+  <div class="mode-options">
+    <button type="button" class="mode-card" data-mode="single">
+      <span class="mode-emoji">🎯</span>
+      <span class="mode-title">Single Player</span>
+      <span class="mode-description">
+        Just you, your reflexes, and the panic!
+      </span>
+      <span class="mode-check">SELECT SOLO</span>
+    </button>
+
+    <button type="button" class="mode-card" data-mode="multi">
+      <span class="mode-emoji">🎉</span>
+      <span class="mode-title">Multiplayer</span>
+      <span class="mode-description">
+        Pass the phone and compete with friends.
+      </span>
+      <span class="mode-check">SELECT MULTIPLAYER</span>
+    </button>
+  </div>
+
+  <button id="continueModeBtn" class="primary-btn" disabled>
+    Choose a mode first →
+  </button>
+</section>
+
       <section id="setupScreen" class="screen setup-screen">
         <div class="hero">
           <div class="hero-sticker sticker-one">⚡</div>
